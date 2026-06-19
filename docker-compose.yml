@@ -22,7 +22,7 @@ services:
       WEBHOOK_SECRET: ${WEBHOOK_SECRET}
     ports:
       - "3333:3333"
-    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    command: sh -c "npx prisma db push --skip-generate --accept-data-loss && node dist/index.js"
 
 volumes:
   db_data:
