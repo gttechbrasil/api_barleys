@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id        String    @id
+  status    String    @default("disconnected") // disconnected | qr | connecting | connected
+  qr        String?
+  creds     Json?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  keys      AuthKey[]
+}
+
+model AuthKey {
+  id        String  @id @default(cuid())
+  sessionId String
+  category  String
+  keyId     String
+  value     Json
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, category, keyId])
+  @@index([sessionId, category])
+}
