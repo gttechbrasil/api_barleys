@@ -11,6 +11,7 @@ function required(name: string): string {
 export const config = {
   port: Number(process.env.PORT ?? 3333),
   apiKey: required("API_KEY"),
-  webhookUrl: required("WEBHOOK_URL"),
+  // Default webhook URL used when a session is created without its own webhookUrl
+  webhookUrl: process.env.WEBHOOK_URL,
   webhookSecret: required("WEBHOOK_SECRET"),
 };

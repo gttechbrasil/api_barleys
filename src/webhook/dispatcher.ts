@@ -8,12 +8,17 @@ export type WebhookEvent =
   | { type: "session.status"; sessionId: string; data: { status: string } }
   | { type: "qr.updated"; sessionId: string; data: { qr: string } };
 
-export async function dispatchWebhook(event: WebhookEvent): Promise<void> {
+export async function dispatchWebhook(event: WebhookEvent, webhookUrl: string | null | undefined): Promise<void> {
+  if (!webhookUrl) {
+    logger.warn({ event: event.type, sessionId: event.sessionId }, "no webhookUrl configured for session, skipping dispatch");
+    return;
+  }
+
   const body = JSON.stringify(event);
   const signature = `sha256=${crypto.createHmac("sha256", config.webhookSecret).update(body).digest("hex")}`;
 
   try {
-    const res = await fetch(config.webhookUrl, {
+    const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Signature": signature },
       body,

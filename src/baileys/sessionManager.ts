@@ -7,6 +7,7 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import { Boom } from "@hapi/boom";
+import { config } from "../config";
 import { prisma } from "../db/prisma";
 import { logger } from "../logger";
 import { dispatchWebhook } from "../webhook/dispatcher";
@@ -18,6 +19,7 @@ interface SessionEntry {
   sock: WASocket;
   status: SessionStatus;
   qr: string | null;
+  webhookUrl: string | null;
   contacts: Map<string, { id: string; name: string | null }>;
   history: Map<string, WAMessage[]>;
 }
@@ -41,7 +43,12 @@ function statusToWebhookStatus(update: proto.WebMessageInfo.Status | number | nu
   }
 }
 
-async function setStatus(sessionId: string, status: SessionStatus, qr: string | null = null): Promise<void> {
+async function setStatus(
+  sessionId: string,
+  status: SessionStatus,
+  webhookUrl: string | null,
+  qr: string | null = null
+): Promise<void> {
   const entry = sessions.get(sessionId);
   if (entry) {
     entry.status = status;
@@ -54,11 +61,22 @@ async function setStatus(sessionId: string, status: SessionStatus, qr: string | 
       update: { status, qr },
     })
     .catch((err) => logger.error({ err, sessionId }, "failed to persist session status"));
-  await dispatchWebhook({ type: "session.status", sessionId, data: { status } });
+  await dispatchWebhook({ type: "session.status", sessionId, data: { status } }, webhookUrl);
 }
 
-export async function startSession(sessionId: string): Promise<void> {
+export async function startSession(sessionId: string, webhookUrl?: string): Promise<void> {
   if (sessions.has(sessionId)) return;
+
+  const existingRow = await prisma.session.findUnique({ where: { id: sessionId } });
+  const resolvedWebhookUrl = webhookUrl ?? existingRow?.webhookUrl ?? config.webhookUrl ?? null;
+
+  if (webhookUrl && webhookUrl !== existingRow?.webhookUrl) {
+    await prisma.session.upsert({
+      where: { id: sessionId },
+      create: { id: sessionId, webhookUrl },
+      update: { webhookUrl },
+    });
+  }
 
   const { state, saveCreds } = await useDbAuthState(sessionId);
 
@@ -72,6 +90,7 @@ export async function startSession(sessionId: string): Promise<void> {
     sock,
     status: "connecting",
     qr: null,
+    webhookUrl: resolvedWebhookUrl,
     contacts: new Map(),
     history: new Map(),
   };
@@ -84,21 +103,21 @@ export async function startSession(sessionId: string): Promise<void> {
 
     if (qr) {
       const qrImage = await QRCode.toDataURL(qr);
-      await setStatus(sessionId, "qr", qrImage);
-      await dispatchWebhook({ type: "qr.updated", sessionId, data: { qr: qrImage } });
+      await setStatus(sessionId, "qr", entry.webhookUrl, qrImage);
+      await dispatchWebhook({ type: "qr.updated", sessionId, data: { qr: qrImage } }, entry.webhookUrl);
     }
 
     if (connection === "open") {
-      await setStatus(sessionId, "connected");
+      await setStatus(sessionId, "connected", entry.webhookUrl);
     } else if (connection === "close") {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
       sessions.delete(sessionId);
       if (loggedOut) {
         await clearAuthState(sessionId);
-        await setStatus(sessionId, "disconnected");
+        await setStatus(sessionId, "disconnected", entry.webhookUrl);
       } else {
-        await setStatus(sessionId, "disconnected");
+        await setStatus(sessionId, "disconnected", entry.webhookUrl);
         await startSession(sessionId);
       }
     }
@@ -135,17 +154,20 @@ export async function startSession(sessionId: string): Promise<void> {
         }
       }
 
-      await dispatchWebhook({
-        type: "message.received",
-        sessionId,
-        data: {
-          from: jid,
-          content,
-          id: msg.key.id,
-          mediaUrl,
-          timestamp: Number(msg.messageTimestamp ?? Math.floor(Date.now() / 1000)),
+      await dispatchWebhook(
+        {
+          type: "message.received",
+          sessionId,
+          data: {
+            from: jid,
+            content,
+            id: msg.key.id,
+            mediaUrl,
+            timestamp: Number(msg.messageTimestamp ?? Math.floor(Date.now() / 1000)),
+          },
         },
-      });
+        entry.webhookUrl
+      );
     }
   });
 
@@ -153,7 +175,7 @@ export async function startSession(sessionId: string): Promise<void> {
     for (const { key, update } of updates) {
       const status = statusToWebhookStatus(update.status);
       if (status && key.id) {
-        await dispatchWebhook({ type: "message.status", sessionId, data: { id: key.id, status } });
+        await dispatchWebhook({ type: "message.status", sessionId, data: { id: key.id, status } }, entry.webhookUrl);
       }
     }
   });

@@ -14,7 +14,10 @@ import {
 
 export const sessionsRouter = Router();
 
-const createSessionSchema = z.object({ id: z.string().min(1) });
+const createSessionSchema = z.object({
+  sessionId: z.string().min(1),
+  webhookUrl: z.string().url().optional(),
+});
 
 sessionsRouter.post("/", async (req, res) => {
   const parsed = createSessionSchema.safeParse(req.body);
@@ -22,9 +25,9 @@ sessionsRouter.post("/", async (req, res) => {
     res.status(400).json({ error: parsed.error.flatten() });
     return;
   }
-  await startSession(parsed.data.id);
-  const status = await getSessionStatus(parsed.data.id);
-  res.status(201).json({ id: parsed.data.id, status });
+  await startSession(parsed.data.sessionId, parsed.data.webhookUrl);
+  const status = await getSessionStatus(parsed.data.sessionId);
+  res.status(201).json({ sessionId: parsed.data.sessionId, status });
 });
 
 sessionsRouter.get("/:id/qr", async (req, res) => {
@@ -62,7 +65,7 @@ sessionsRouter.post("/:id/messages", async (req, res) => {
   try {
     const { to, type, content, mediaUrl } = parsed.data;
     const result = await sendMessage(req.params.id, to, type, content, mediaUrl);
-    res.status(202).json({ messageId: result.messageId, status: "sent" });
+    res.status(202).json({ id: result.messageId });
   } catch (err) {
     res.status(409).json({ error: (err as Error).message });
   }
