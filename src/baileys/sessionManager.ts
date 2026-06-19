@@ -165,6 +165,9 @@ export async function startSession(sessionId: string, webhookUrl?: string): Prom
           sessionId,
           data: {
             from: jid,
+            senderPn: msg.key.senderPn ?? null,
+            participantPn: msg.key.participantPn ?? null,
+            pushName: msg.pushName ?? null,
             content,
             id: msg.key.id,
             mediaUrl,

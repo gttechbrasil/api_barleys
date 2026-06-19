@@ -3,7 +3,20 @@ import { config } from "../config";
 import { logger } from "../logger";
 
 export type WebhookEvent =
-  | { type: "message.received"; sessionId: string; data: { from: string; content: string | null; id: string; mediaUrl: string | null; timestamp: number } }
+  | {
+      type: "message.received";
+      sessionId: string;
+      data: {
+        from: string;
+        senderPn: string | null;
+        participantPn: string | null;
+        pushName: string | null;
+        content: string | null;
+        id: string;
+        mediaUrl: string | null;
+        timestamp: number;
+      };
+    }
   | { type: "message.status"; sessionId: string; data: { id: string; status: "sent" | "delivered" | "read" | "failed" } }
   | { type: "session.status"; sessionId: string; data: { status: string } }
   | { type: "qr.updated"; sessionId: string; data: { qr: string } };
