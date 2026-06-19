@@ -4,6 +4,7 @@ import makeWASocket, {
   WAMessage,
   proto,
   downloadMediaMessage,
+  fetchLatestBaileysVersion,
 } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import { Boom } from "@hapi/boom";
@@ -79,9 +80,11 @@ export async function startSession(sessionId: string, webhookUrl?: string): Prom
   }
 
   const { state, saveCreds } = await useDbAuthState(sessionId);
+  const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
     auth: state,
+    version,
     printQRInTerminal: false,
     logger: logger.child({ sessionId }) as any,
   });
@@ -118,7 +121,9 @@ export async function startSession(sessionId: string, webhookUrl?: string): Prom
         await setStatus(sessionId, "disconnected", entry.webhookUrl);
       } else {
         await setStatus(sessionId, "disconnected", entry.webhookUrl);
-        await startSession(sessionId);
+        setTimeout(() => {
+          startSession(sessionId).catch((err) => logger.error({ err, sessionId }, "failed to reconnect session"));
+        }, 3000);
       }
     }
   });
